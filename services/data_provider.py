@@ -1,35 +1,49 @@
+import os
 import requests
-from datetime import datetime, timezone
+from datetime import datetime, timezone, timedelta
+from typing import Any, Dict, List, Optional
 
-def fetch_ohlc_finnhub(ticker: str, resolution: str = "D", count: int = 200, token: str = ""):
+def fetch_ohlc_finnhub(
+    ticker: str,
+    timeframe: str = "1D",
+    candles: int = 200,
+    api_key: Optional[str] = None,
+) -> List[Dict[str, Any]]:
     """
     Ritorna una lista di candele OHLCV in formato:
     [{"t":..., "o":..., "h":..., "l":..., "c":..., "v":...}, ...]
-    resolution: "D" (giornaliero) oppure "W" (settimanale)
-    count: numero di barre (approssimato convertendo in range temporale)
+    timeframe: "1D" (giornaliero) oppure "1W" (settimanale)
+    candles: numero di barre richieste (approx)
     """
-    if not token:
+
+    key = api_key or os.getenv("FINNHUB_API_KEY", "")
+    if not key:
         raise ValueError("FINNHUB_API_KEY missing")
 
-    now = datetime.now(timezone.utc)
-    to_ts = int(now.timestamp())
-
-    # Finnhub /stock/candle usa from/to (non 'count'), quindi stimiamo una finestra temporale
-    if resolution == "D":
-        from_ts = to_ts - int(count) * 86400
-    elif resolution == "W":
-        from_ts = to_ts - int(count) * 7 * 86400
+    tf = timeframe.upper().strip()
+    if tf in ("1D", "D"):
+        resolution = "D"
+        # ci mettiamo margine per weekend/festivi
+        days_back = max(30, int(candles * 2))
+        delta = timedelta(days=days_back)
+    elif tf in ("1W", "W"):
+        resolution = "W"
+        weeks_back = max(52, int(candles))
+        delta = timedelta(weeks=weeks_back)
     else:
-        # fallback: trattalo come giorni
-        from_ts = to_ts - int(count) * 86400
+        raise ValueError("timeframe must be 1D or 1W")
+
+    now = datetime.now(timezone.utc)
+    frm = int((now - delta).timestamp())
+    to = int(now.timestamp())
 
     url = "https://finnhub.io/api/v1/stock/candle"
     params = {
-        "symbol": ticker.upper(),
+        "symbol": ticker.upper().strip(),
         "resolution": resolution,
-        "from": from_ts,
-        "to": to_ts,
-        "token": token,
+        "from": frm,
+        "to": to,
+        "token": key,
     }
 
     r = requests.get(url, params=params, timeout=20)
@@ -39,7 +53,7 @@ def fetch_ohlc_finnhub(ticker: str, resolution: str = "D", count: int = 200, tok
     if data.get("s") != "ok":
         raise ValueError(f"Finnhub error: {data}")
 
-    candles = []
+    candles_out = []
     t = data["t"]
     o = data["o"]
     h = data["h"]
@@ -48,6 +62,10 @@ def fetch_ohlc_finnhub(ticker: str, resolution: str = "D", count: int = 200, tok
     v = data.get("v", [None] * len(t))
 
     for i in range(len(t)):
-        candles.append({"t": t[i], "o": o[i], "h": h[i], "l": l[i], "c": c[i], "v": v[i]})
+        candles_out.append({"t": t[i], "o": o[i], "h": h[i], "l": l[i], "c": c[i], "v": v[i]})
 
-    return candles
+    # se vuoi “tagliare” circa al numero richiesto (opzionale)
+    if len(candles_out) > candles:
+        candles_out = candles_out[-candles:]
+
+    return candles_out
