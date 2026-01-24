@@ -13,11 +13,11 @@ class PatternSignal:
 
 def run_stock_pattern(candles: List[Dict[str, Any]], horizon: str = "short") -> Dict[str, Any]:
     """
-    Placeholder semplice: trend su close (c).
+    Placeholder "safe": restituisce 1 segnale coerente con UI.
+    candles: lista con chiavi t/o/h/l/c/v
     horizon: "short" | "long"
     """
 
-    horizon = (horizon or "short").lower().strip()
     n = 30 if horizon == "short" else 200
     recent = candles[-n:] if len(candles) >= n else candles[:]
 
@@ -31,7 +31,7 @@ def run_stock_pattern(candles: List[Dict[str, Any]], horizon: str = "short") -> 
             "overlay": {"points": [], "lines": []},
         }
 
-    trend = float(closes[-1]) - float(closes[0])
+    trend = closes[-1] - closes[0]
     if trend > 0:
         direction = "bullish"
         name = "Trend rialzista"
